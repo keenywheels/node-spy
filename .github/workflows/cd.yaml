@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      IMAGE_NAME: daronenko/vixar-ssr-scheduler
+      IMAGE_NAME: daronenko/vixar-spa-scheduler
 
     steps:
       - name: checkout code
