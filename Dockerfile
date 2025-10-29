@@ -96,6 +96,6 @@ RUN touch /var/log/cron.log
 RUN chmod 666 /var/log/cron.log
 
 # Настройка cron задачи
-RUN echo "50 * * * * /app/run-app.sh >> /var/log/cron.log 2>&1" | crontab -
+RUN echo "35 * * * * /app/run-app.sh >> /var/log/cron.log 2>&1" | crontab -
 
 CMD ["/init.sh"]
