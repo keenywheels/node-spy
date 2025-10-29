@@ -33,10 +33,10 @@ const DEFAULT_CONFIG: CrawlerConfigType = {
     outputDir: path.resolve('./data/scraped'),
 
     // URL и навигация
-    originUrl: 'https://www.wildberries.ru',
-    targetUrl: 'https://www.wildberries.ru',
-    maxDepth: 3,
-    requestDelay: 3000,
+    originUrl: 'https://www.avito.ru',
+    targetUrl: 'https://www.avito.ru',
+    maxDepth: 5,
+    requestDelay: 1000,
 
     // Настройки браузера
     browserArgs: [

@@ -20,13 +20,12 @@ export class KafkaBroker {
         const date = new Date();
 
         const data: Object = {
-            "site_name": "wildberries",
-            "url": "https://wildberries.ru",
+            "site_name": "avito",
             "msg": msg,
-            "date": date.toLocaleDateString()
+            "date": this.formatDate(date)
         }
         await this.producer.send({
-            topic: 'test-topic',
+            topic: 'scraper_data',
             messages: [
               { value: JSON.stringify(data) },
             ],
@@ -35,5 +34,12 @@ export class KafkaBroker {
 
     async producerDisconnect() {
         await this.producer.disconnect();
+    }
+
+    private formatDate(date: Date): string {
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = (date.getMonth() + 1).toString().padStart(2, '0'); // Месяцы 0-индексированы
+        const year = date.getFullYear();
+        return `${day}-${month}-${year}`;
     }
 }

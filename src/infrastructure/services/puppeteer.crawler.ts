@@ -46,7 +46,7 @@ export class PuppeteerCrawler extends BaseCrawler {
             this.page = await this.initBrowser(false);
             const startTime: Date = new Date;
             await this.page.goto(this.config.originUrl, { 
-                waitUntil: "networkidle2",
+                waitUntil: "domcontentloaded",
                 timeout: 60000 
             });
             const endTime: Date = new Date;
