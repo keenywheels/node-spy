@@ -1,101 +1,73 @@
-FROM ubuntu:22.04
+FROM node:lts-slim
 
-# Установка переменных окружения для избежания интерактивных запросов
-ENV DEBIAN_FRONTEND=noninteractive
+# chromium
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        # Chromium и шрифты
+        chromium \
+        fonts-liberation \
+        fonts-freefont-ttf \
+        fonts-noto-color-emoji \
+        fonts-dejavu-core \
+        fonts-ipafont-gothic \
+        \
+        # Основные GUI/звуковые зависимости
+        libasound2 \
+        libatk-bridge2.0-0 \
+        libatk1.0-0 \
+        libcups2 \
+        libdbus-1-3 \
+        libdrm2 \
+        libgbm1 \
+        libgtk-3-0 \
+        libnspr4 \
+        libnss3 \
+        libx11-xcb1 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxrandr2 \
+        libxss1 \
+        libxtst6 \
+        libxshmfence1 \
+        \
+        # Для headful-режима
+        xvfb \
+        xauth \
+        upower \
+        dbus-x11 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Установка Node.js
-RUN apt-get update && apt-get install -y curl && \
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+# cron
+RUN apt-get update && apt-get install -y cron
 
-# Обновление пакетов и установка необходимого ПО
-RUN apt-get update && apt-get install -y \
-    x11vnc \
-    xvfb \
-    x11-apps \
-    wget \
-    gnupg \
-    ca-certificates \
-    fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libatspi2.0-0 \
-    libcairo2 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libglib2.0-0 \
-    libnspr4 \
-    libnss3 \
-    libpango-1.0-0 \
-    libx11-6 \
-    libxcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxrandr2 \
-    libxss1 \
-    libxtst6 \
-    xdg-utils \
-    nodejs \
-    build-essential \
-    python3 \
-    cron \
-    && rm -rf /var/lib/apt/lists/*
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Установка Google Chrome
-RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable \
-    && rm -rf /var/lib/apt/lists/*
-
-# Создание директории для приложения
 WORKDIR /app
-
-# Копирование package.json и package-lock.json (если есть)
-COPY package*.json ./
-
-# Установка зависимостей Node.js
+COPY package*.json .
 RUN npm install
-
-# Копирование исходного кода приложения
 COPY . .
 
-# Сборка проекта (если требуется)
-RUN if [ -f package.json ] && grep -q '"build"' package.json; then npm run build; fi
+RUN npm run build
 
-# Создание директории для VNC и установка пароля
-RUN mkdir -p /root/.vnc && \
-    x11vnc -storepasswd 1234 /root/.vnc/passwd
+# Настройка cron задачи
+RUN echo "0 0 * * * /app/run-app.sh >> /var/log/cron.log 2>&1" | crontab -
 
-# Создание скрипта инициализации
 RUN echo '#!/bin/bash\n\
-# Запуск виртуального дисплея\n\
-Xvfb :0 -screen 0 1920x1080x24 &\n\
-export DISPLAY=:0\n\
+set -e\n\
 \n\
-# Запуск VNC сервера\n\
-#x11vnc -forever -usepw -display :0 &\n\
-\n\
-# Запуск cron\n\
-cron -f\n\
-\n\
-wait' > /init.sh && chmod +x /init.sh
+# Запускаем dbus (session bus)\n\
+echo "Запуск DBus..."\n\
+service dbus start\n\
+echo "Запуск cron..."\n\
+cron -f' > /init.sh && chmod +x /init.sh
 
-# Создание отдельного скрипта для приложения
 RUN echo '#!/bin/bash\n\
-export DISPLAY=:0\n\
-cd /app\n\
-# Запуск вашего приложения\n\
-npm start' > /app/run-app.sh && chmod +x /app/run-app.sh
+eval "$(dbus-launch --sh-syntax --exit-with-session)"\n\
+xvfb-run --server-args="-screen 0 1920x1080x24" npm start\n\
+' > /app/run-app.sh && chmod +x /app/run-app.sh
 
 RUN touch /var/log/cron.log
 RUN chmod 666 /var/log/cron.log
-
-# Настройка cron задачи
-RUN echo "50 * * * * /app/run-app.sh >> /var/log/cron.log 2>&1" | crontab -
 
 CMD ["/init.sh"]
