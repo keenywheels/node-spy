@@ -2,44 +2,33 @@ import puppeteer from 'puppeteer';
 import puppeteerExtra from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { Browser, Page } from 'puppeteer';
-import { BaseCrawler } from '../../core/services/base.crawler';
-import { IParser } from '../../core/interfaces/parser.interface';
-import { IStorage } from '../../core/interfaces/storage.interface';
-import { Session } from '../../core/entities/session';
-import { Webpage } from '../../core/entities/webpage';
-import { Logger } from 'src/utils/logger';
+import { Session } from '../entites/session';
+import { Webpage } from '../entites/webpage';
+import { Logger } from '../utils/logger';
 import { KafkaBroker } from './kafka.broker';
-
-const MAX_CONCURRENT_REQUESTS = 1;
+import { JSDOMParser } from './jsdom.parser';
+import { FileStorage } from './file.storage';
 
 // Initialize the stealth plugin
 puppeteerExtra.use(StealthPlugin());
 
-export class PuppeteerCrawler extends BaseCrawler {
+export class PuppeteerCrawler {
     private browser: Browser | null = null;
     private page: Page | null = null;
-    private logger: Logger;
-    private broker: KafkaBroker;
 
     constructor(
-        parser: IParser,
-        storage: IStorage,
-        protected readonly config: {
+        private parser: JSDOMParser,
+        private storage: FileStorage,
+        private logger: Logger,
+        private broker: KafkaBroker,
+        private readonly config: {
             originUrl: string;
             targetUrl: string;
             maxDepth: number;
             requestDelay: number;
             browserArgs: string[];
-            viewport: { width: number; height: number };
-            headless: boolean;
-        },
-        logger: Logger,
-        broker: KafkaBroker
-    ) {
-        super(parser, storage, config);
-        this.logger = logger;
-        this.broker = broker;
-    }
+        }
+    ){}
 
     async saveSession(): Promise<Session> {
         try {
@@ -55,16 +44,11 @@ export class PuppeteerCrawler extends BaseCrawler {
                 await this.delay(5000 - timeDiff);
             }
 
-            await this.page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36');
-
-            const cookies = await this.page.cookies();
+            const cookies = await this.browser!.cookies();
             const localStorage = await this.getLocalStorage(this.page);
             const sessionStorage = await this.getSessionStorage(this.page);
 
-            /* try {
-                await this.page.screenshot({ path: 'ozon_restored.png', fullPage: true });
-                console.log('Saved screenshot ozon_restored.png');
-            } catch (e) {} */
+            //this.takeScreenshot();
 
             await this.closeBrowser();
 
@@ -84,9 +68,7 @@ export class PuppeteerCrawler extends BaseCrawler {
         try {
             this.page = await this.initBrowser(true);
             
-            await this.page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36');
-
-            await this.page.setCookie(...session.cookies);
+            await this.browser!.setCookie(...session.cookies);
             await this.page.goto(this.config.originUrl, { waitUntil: 'domcontentloaded' });
             await this.setLocalStorage(this.page, session.localStorage);
             await this.setSessionStorage(this.page, session.sessionStorage);
@@ -117,10 +99,11 @@ export class PuppeteerCrawler extends BaseCrawler {
 
             const content = await page.content();
             const extractedText = this.parser.parseHTML(content);
-            const metadata = this.parser.extractMetadata(content);
             
             const webpage = new Webpage(url, depth, content, extractedText);
-            //await this.storage.saveWebpage(webpage);
+
+            //const pageText = await page.evaluate(() => document.body.innerText);
+            //console.log(pageText);
             await this.broker.producerSend(webpage.extractedText.join(" "));
 
             if (!this.isMaxDepthReached(depth + 1)) {
@@ -129,26 +112,13 @@ export class PuppeteerCrawler extends BaseCrawler {
 
                 this.logger.debug(`Found ${links.length} valid links on ${url}`);
 
-                // Разбиваем массив ссылок на чанки для параллельной обработки
-                const chunks = this.chunkArray(links, MAX_CONCURRENT_REQUESTS);
-
-                // Обрабатываем чанки последовательно
-                for (const chunk of chunks) {
-                    await Promise.all(
-                        chunk.map(async (link) => {
-                            await this.delay();//1000 + Math.random() * this.config.requestDelay);
-                            try {
-                                await this.visitPage(link, depth + 1);
-                            } catch (error: any) {
-                                this.logger.error(`Failed to visit ${link}`, error as Error);
-                                if (error.message.includes('net::ERR_ABORTED')) {
-                                    this.logger.warn(`Navigation aborted for ${url}, retrying...`);
-                                    await this.delay(1000 + Math.random() * this.config.requestDelay);
-                                    return this.visitPage(url, depth + 1);
-                                }
-                            }
-                        })
-                    );
+                for (const link of links) {
+                    await this.delay();
+                    try {
+                        await this.visitPage(link, depth + 1);
+                    } catch (error: any) {
+                        this.logger.error(`Failed to visit ${link}`, error as Error);
+                    }
                 }
             }
 
@@ -163,18 +133,16 @@ export class PuppeteerCrawler extends BaseCrawler {
         if (!headless) {
             this.browser = await puppeteer.launch({
                 headless: false,
-                args: this.config.browserArgs,
-                defaultViewport: this.config.viewport
+                args: this.config.browserArgs
             });
         } else {
             this.browser = await puppeteerExtra.launch({
                 headless: true,
-                args: this.config.browserArgs,
-                defaultViewport: this.config.viewport
+                args: this.config.browserArgs
             });
         }
 
-        const page = await this.browser.newPage();
+        const page = await this.browser!.newPage();
         
         this.logger.setupPageLogging(page);
         
@@ -234,11 +202,42 @@ export class PuppeteerCrawler extends BaseCrawler {
         }, Object.fromEntries(storage));
     }
 
-    private chunkArray<T>(array: T[], size: number): T[][] {
-        const chunks: T[][] = [];
-        for (let i = 0; i < array.length; i += size) {
-            chunks.push(array.slice(i, i + size));
+    protected isMaxDepthReached(depth: number): boolean {
+        return depth > this.config.maxDepth;
+    }
+
+    /**
+     * Проверяет, принадлежит ли URL тому же домену
+     */
+    protected isSameDomain(url: string): boolean {
+        try {
+            const targetOrigin = new URL(this.config.originUrl).origin;
+            const urlOrigin = new URL(url).origin;
+            return urlOrigin === targetOrigin;
+        } catch {
+            return false;
         }
-        return chunks;
+    }
+
+    /**
+     * Задержка между запросами
+     */
+    protected async delay(msec: number = this.config.requestDelay): Promise<void> {
+        await new Promise(resolve => setTimeout(resolve, msec));
+    }
+
+    /**
+     * Форматирует URL для использования в качестве имени файла
+     */
+    protected formatUrlForFilename(url: string, depth: number): string {
+        const urlSafe = url.replace(/[^\w]/g, '_').toLowerCase();
+        return `depth_${depth}/${urlSafe}`;
+    }
+
+    private async takeScreenshot(filename: string = 'screenshot') {
+        try {
+            await this.page!.screenshot({ path: `${filename}.png`, fullPage: true });
+            console.log(`Saved screenshot ${filename}.png`);
+        } catch (e) {console.log('error:', e as Error)}
     }
 }

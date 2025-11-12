@@ -1,9 +1,9 @@
-import { Config } from './infrastructure/config/config';
-import { PuppeteerCrawler } from './infrastructure/services/puppeteer.crawler';
-import { JSDOMParser } from './infrastructure/services/jsdom.parser';
-import { FileStorage } from './infrastructure/persistence/file.storage';
+import { Config } from './utils/config';
+import { PuppeteerCrawler } from './core/puppeteer.crawler';
+import { FileStorage } from './core/file.storage';
 import { Logger } from './utils/logger';
-import { KafkaBroker } from './infrastructure/services/kafka.broker';
+import { KafkaBroker } from './core/kafka.broker';
+import { JSDOMParser } from './core/jsdom.parser';
 
 async function bootstrap() {
     const logger = new Logger();
@@ -11,14 +11,11 @@ async function bootstrap() {
     try {
         // Инициализация конфигурации
         const config = new Config();
-        const configuration = config.getConfig();
+        const cfg = config.getConfig();
 
         const parser = new JSDOMParser();
         
-        const storage = new FileStorage({
-            sessionFile: configuration.sessionFile,
-            outputDir: configuration.outputDir
-        })
+        const storage = new FileStorage(cfg.sessionFile)
         
         const kafkaBroker = new KafkaBroker();
         await kafkaBroker.producerConnect();
@@ -27,18 +24,13 @@ async function bootstrap() {
         const crawler = new PuppeteerCrawler(
             parser,
             storage,
-            {
-                originUrl: configuration.originUrl,
-                targetUrl: configuration.targetUrl,
-                maxDepth: configuration.maxDepth,
-                requestDelay: configuration.requestDelay,
-                browserArgs: configuration.browserArgs,
-                viewport: configuration.viewport,
-                headless: configuration.headless
-            },
             logger,
-            kafkaBroker
+            kafkaBroker,
+            cfg,
+            
         );
+
+        console.log('Launching headful browser and saving session...');
 
         // Сохранение и использование сессии
         const session = await crawler.saveSession();
