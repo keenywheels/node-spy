@@ -7,7 +7,6 @@ import fs from 'fs/promises';
 interface CrawlerConfigType {
     // Файловая система
     sessionFile: string;
-    outputDir: string;
 
     // URL и навигация
     originUrl: string;
@@ -17,11 +16,6 @@ interface CrawlerConfigType {
 
     // Настройки браузера
     browserArgs: string[];
-    viewport: {
-        width: number;
-        height: number;
-    };
-    headless: boolean;
 }
 
 /**
@@ -30,7 +24,6 @@ interface CrawlerConfigType {
 const DEFAULT_CONFIG: CrawlerConfigType = {
     // Файловая система
     sessionFile: path.resolve('./data/session.json'),
-    outputDir: path.resolve('./data/scraped'),
 
     // URL и навигация
     originUrl: 'https://www.avito.ru',
@@ -41,13 +34,12 @@ const DEFAULT_CONFIG: CrawlerConfigType = {
     // Настройки браузера
     browserArgs: [
         '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-gpu',
         '--disable-blink-features=AutomationControlled',
-/*         '--disable-setuid-sandbox',
-        '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process', */
+        '--enable-unsafe-swiftshader',
+        '--window-size=1920,1080'
     ],
-    viewport: { width: 1920, height: 1080 },
-    headless: false
 };
 
 /**
@@ -80,7 +72,6 @@ export class Config {
         
         try {
             await fs.mkdir(path.dirname(this.config.sessionFile), { recursive: true });
-            await fs.mkdir(this.config.outputDir, { recursive: true });
         } catch (error) {
             console.error('Failed to create directories:', error);
         }
