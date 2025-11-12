@@ -41,7 +41,7 @@ services:
     command: ["sh", "kafka_init.sh"]
     depends_on:
       - kafka
-    restart: on-failure
+    #restart: on-failure
 
   kafka-ui:
     container_name: kafka-ui
