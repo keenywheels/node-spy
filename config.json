@@ -1,0 +1,17 @@
+{
+    "logLevel": "info",
+    "sessionFile": "./data/session.json",
+    "originUrl": "https://www.avito.ru",
+    "siteName": "avito",
+    "maxDepth": 5,
+    "requestDelay": 1000,
+    "minInitTime": 5000,
+    "browserArgs": [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-gpu",
+        "--disable-blink-features=AutomationControlled",
+        "--enable-unsafe-swiftshader",
+        "--window-size=1920,1080"
+    ]
+}

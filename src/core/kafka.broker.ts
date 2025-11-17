@@ -5,7 +5,7 @@ export class KafkaBroker {
     private producer: Producer;
     constructor() {
         this.kafka = new Kafka({
-            clientId: 'my-app',
+            clientId: 'vixar-spa-scheduler',
             brokers: ['kafka:9092']
         })
         this.producer = this.kafka.producer();
@@ -15,11 +15,11 @@ export class KafkaBroker {
         await this.producer.connect();
     }
 
-    async producerSend(msg: string) {
+    async producerSend(siteName: string, msg: string) {
         const date = new Date();
 
         const data: Object = {
-            "site_name": "avito",
+            "site_name": siteName,
             "msg": msg,
             "date": this.formatDate(date)
         }

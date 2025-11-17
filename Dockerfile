@@ -37,9 +37,6 @@ RUN apt-get update && \
         dbus-x11 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# cron
-RUN apt-get update && apt-get install -y cron
-
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
@@ -50,21 +47,26 @@ COPY . .
 
 RUN npm run build
 
-# Настройка cron задачи
-RUN echo "0 0 * * * /app/run-app.sh >> /var/log/cron.log 2>&1" | crontab -
-
 RUN echo '#!/bin/bash\n\
-set -e\n\
-\n\
-# Запускаем dbus (session bus)\n\
-echo "Запуск DBus..."\n\
+echo "Starting DBus system..."\n\
 service dbus start\n\
-echo "Запуск cron..."\n\
-cron -f' > /init.sh && chmod +x /init.sh
+echo "Starting DBus session..."\n\
+eval "$(dbus-launch --sh-syntax)"\n\
+export DBUS_SESSION_BUS_ADDRESS\n\
+export DBUS_SESSION_BUS_PID\n\
+echo "Starting scheduler.js"\n\
+cd /app\n\
+npm run scheduler\n\
+' > /init.sh && chmod +x /init.sh
 
 RUN echo '#!/bin/bash\n\
-eval "$(dbus-launch --sh-syntax --exit-with-session)"\n\
-xvfb-run --server-args="-screen 0 1920x1080x24" npm start\n\
+echo "DBus session running at $DBUS_SESSION_BUS_ADDRESS"\n\
+cd /app\n\
+# xvfb-run --server-args="-screen 0 1920x1080x24" npm run init $2 >> /var/log/cron.log\n\
+Xvfb :99 -screen 0 1920x1080x24 &\n\
+export DISPLAY=:99\n\
+npm run init $2 >> /var/log/cron.log\n\
+npm start $1 $2 >> /var/log/cron.log\n\
 ' > /app/run-app.sh && chmod +x /app/run-app.sh
 
 RUN touch /var/log/cron.log

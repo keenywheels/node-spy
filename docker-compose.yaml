@@ -10,6 +10,9 @@ services:
       kafka-init:
         condition: service_completed_successfully
         restart: true
+    volumes:
+      - /home/ivan/pptr_ts/screenshot.png:/app/screenshot.png
+
   kafka:
     image: apache/kafka:latest
     container_name: kafka
