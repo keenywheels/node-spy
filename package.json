@@ -5,20 +5,23 @@
   "main": "dist/main.js",
   "type": "module",
   "scripts": {
-    "start": "node dist/main.js",
+    "init": "node dist/init.js",
+    "start": "node dist/run.js",
+    "scheduler": "node scheduler.js",
     "build": "tsc && tsc-esm-fix dist",
     "clean": "rimraf dist"
   },
   "dependencies": {
+    "child_process": "^1.0.2",
+    "cron": "^4.3.4",
     "fs-extra": "^11.3.2",
-    "jsdom": "^27.1.0",
+    "jsdom": "^27.2.0",
     "kafkajs": "^2.2.4",
-    "puppeteer": "^24.29.1",
+    "puppeteer": "^24.30.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "rimraf": "^6.1.0",
     "tsc-esm-fix": "^3.1.2",
-    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.9.3"
   },
   "devDependencies": {

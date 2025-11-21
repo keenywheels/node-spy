@@ -3,36 +3,37 @@ import puppeteerExtra from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { Browser, Page } from 'puppeteer';
 import { Session } from '../entites/session';
-import { Webpage } from '../entites/webpage';
 import { Logger } from '../utils/logger';
 import { KafkaBroker } from './kafka.broker';
 import { JSDOMParser } from './jsdom.parser';
-import { FileStorage } from './file.storage';
 
 // Initialize the stealth plugin
 puppeteerExtra.use(StealthPlugin());
 
-export class PuppeteerCrawler {
+export class PuppeteerSessionStealer {
     private browser: Browser | null = null;
     private page: Page | null = null;
 
     constructor(
-        private parser: JSDOMParser,
-        private storage: FileStorage,
-        private logger: Logger,
-        private broker: KafkaBroker,
         private readonly config: {
             originUrl: string;
-            targetUrl: string;
-            maxDepth: number;
-            requestDelay: number;
+            minInitTime: number;
             browserArgs: string[];
-        }
+        },
+        private logger: Logger
     ){}
 
-    async saveSession(): Promise<Session> {
+    async init() {
+        this.logger.info("Starting init session stealer");
+        this.browser = await puppeteer.launch({
+            headless: false,
+            defaultViewport: {width: 1920, height: 1080},
+            args: this.config.browserArgs
+        });
+
+        this.page = await this.browser.newPage();
+
         try {
-            this.page = await this.initBrowser(false);
             const startTime: Date = new Date;
             await this.page.goto(this.config.originUrl, { 
                 waitUntil: "domcontentloaded",
@@ -40,15 +41,23 @@ export class PuppeteerCrawler {
             });
             const endTime: Date = new Date;
             const timeDiff = endTime.getTime() - startTime.getTime();
-            if (timeDiff < 5000) {
-                await this.delay(5000 - timeDiff);
+            if (timeDiff < this.config.minInitTime) {
+                await delay(this.config.minInitTime - timeDiff);
             }
 
-            const cookies = await this.browser!.cookies();
-            const localStorage = await this.getLocalStorage(this.page);
-            const sessionStorage = await this.getSessionStorage(this.page);
+            /* await this.takeScreenshot(); */
+            this.logger.info("Successfully init session stealer");
+        } catch (error) {
+            await this.closeBrowser();
+            throw new Error(`Failed to init session stealer: ${error}`);
+        }
+    }
 
-            //this.takeScreenshot();
+    async saveSession(): Promise<Session> {
+        try {
+            const cookies = await this.browser!.cookies();
+            const localStorage = await this.getLocalStorage(this.page!);
+            const sessionStorage = await this.getSessionStorage(this.page!);
 
             await this.closeBrowser();
 
@@ -62,91 +71,6 @@ export class PuppeteerCrawler {
             await this.closeBrowser();
             throw new Error(`Failed to save session: ${error}`);
         }
-    }
-
-    async useSession(session: Session): Promise<void> {
-        try {
-            this.page = await this.initBrowser(true);
-            
-            await this.browser!.setCookie(...session.cookies);
-            await this.page.goto(this.config.originUrl, { waitUntil: 'domcontentloaded' });
-            await this.setLocalStorage(this.page, session.localStorage);
-            await this.setSessionStorage(this.page, session.sessionStorage);
-
-            await this.visitPage(this.config.targetUrl, 0);
-            
-            await this.closeBrowser();
-        } catch (error) {
-            await this.closeBrowser();
-            throw new Error(`Failed to use session: ${error}`);
-        }
-    }
-
-    async visitPage(url: string, depth: number): Promise<Webpage> {
-        if (this.isMaxDepthReached(depth)) {
-            this.logger.warn(`Max depth ${depth} reached for ${url}`);
-            throw new Error(`Max depth ${depth} reached for ${url}`);
-        }
-
-        const page = this.page!;
-        try {
-            this.logger.info(`→ VISITING (depth ${depth}): ${url}`);
-            
-            await page.goto(url, { 
-                waitUntil: 'networkidle2',
-                timeout: 30000 
-            });
-
-            const content = await page.content();
-            const extractedText = this.parser.parseHTML(content);
-            
-            const webpage = new Webpage(url, depth, content, extractedText);
-
-            //const pageText = await page.evaluate(() => document.body.innerText);
-            //console.log(pageText);
-            await this.broker.producerSend(webpage.extractedText.join(" "));
-
-            if (!this.isMaxDepthReached(depth + 1)) {
-                const links = this.parser.extractLinks(content)
-                    .filter(link => this.isSameDomain(link));
-
-                this.logger.debug(`Found ${links.length} valid links on ${url}`);
-
-                for (const link of links) {
-                    await this.delay();
-                    try {
-                        await this.visitPage(link, depth + 1);
-                    } catch (error: any) {
-                        this.logger.error(`Failed to visit ${link}`, error as Error);
-                    }
-                }
-            }
-
-            return webpage;
-        } catch (error) {
-            this.logger.error(`Failed to visit page ${url}`, error as Error);
-            throw error;
-        }
-    }
-
-    private async initBrowser(headless: boolean): Promise<Page> {
-        if (!headless) {
-            this.browser = await puppeteer.launch({
-                headless: false,
-                args: this.config.browserArgs
-            });
-        } else {
-            this.browser = await puppeteerExtra.launch({
-                headless: true,
-                args: this.config.browserArgs
-            });
-        }
-
-        const page = await this.browser!.newPage();
-        
-        this.logger.setupPageLogging(page);
-        
-        return page;
     }
 
     private async closeBrowser(): Promise<void> {
@@ -184,6 +108,119 @@ export class PuppeteerCrawler {
         return new Map(Object.entries(storage));
     }
 
+    private async takeScreenshot() {
+        try {
+            await this.page!.screenshot({ path: "screenshot.png", fullPage: true });
+            this.logger.info("Saved screenshot.png");
+        } catch (e) {this.logger.error('error:', e as Error)}
+    }
+}
+
+export class PuppeteerCrawler {
+    private browser: Browser | null = null;
+    private page: Page | null = null;
+
+    constructor(
+        private readonly config: {
+            originUrl: string;
+            siteName: string;
+            maxDepth: number;
+            requestDelay: number;
+            waitSPA: number;
+            browserArgs: string[];
+        },
+        private parser: JSDOMParser,
+        private broker: KafkaBroker,
+        private logger: Logger
+    ){}
+
+    async init(session: Session) {
+        this.browser = await puppeteerExtra.launch({
+            headless: true,
+            defaultViewport: {width: 1920, height: 1080},
+            args: this.config.browserArgs
+        });
+
+        this.page = await this.browser.newPage();
+        
+        this.logger.setupPageLogging(this.page);
+            
+        try {
+            await this.browser.setCookie(...session.cookies);
+            await this.page.goto(this.config.originUrl, { waitUntil: "domcontentloaded" });
+            await this.setLocalStorage(this.page, session.localStorage);
+            await this.setSessionStorage(this.page, session.sessionStorage);
+            this.logger.info("Successfully init crawler");
+        } catch (error) {
+            await this.closeBrowser();
+            throw new Error(`Failed to init crawler: ${error}`);
+        }
+    }
+
+    async run(): Promise<void> {
+        try {
+            await this.visitPage(this.config.originUrl, 0);
+            await this.closeBrowser();
+        } catch (error) {
+            await this.closeBrowser();
+            throw new Error(`Failed to run crawler: ${error}`);
+        }
+    }
+
+    private async visitPage(url: string, depth: number): Promise<void> {
+        if (this.isMaxDepthReached(depth)) {
+            this.logger.debug(`Max depth ${depth} reached for ${url}`);
+            return;
+        }
+
+        try {
+            this.logger.info(`VISITING (depth ${depth}): ${url}`);
+            
+            const startTime = performance.now();
+            await this.page!.goto(url, { waitUntil: 'domcontentloaded' });
+            const endTime = performance.now();
+            const execTime = endTime - startTime;
+            this.logger.debug(`${url} visited in ${execTime}`);
+            if (execTime < this.config.waitSPA) {
+                await delay(this.config.waitSPA - execTime);
+            }
+            // await this.takeScreenshot("after");
+
+            const content = await this.page!.content();
+            const extractedText = this.parser.parseHTML(content);
+            
+            await this.broker.producerSend(this.config.siteName, extractedText.join(' '));
+
+            if (!this.isMaxDepthReached(depth + 1)) {
+                const links = this.parser.extractLinks(content)
+                    .filter(link => this.isSameSecondLevelDomain(link));
+
+                this.logger.debug(`Found ${links.length} valid links on ${url}`);
+
+                for (const link of links) {
+                    await delay(this.config.requestDelay);
+                    try {
+                        await this.visitPage(link, depth + 1);
+                    } catch (error: any) {
+                        this.logger.error(`Failed to visit ${link}`, error as Error);
+                    }
+                }
+            }
+
+            return;
+        } catch (error) {
+            this.logger.error(`Failed to visit page ${url}`, error as Error);
+            throw error;
+        }
+    }
+
+    private async closeBrowser(): Promise<void> {
+        if (this.browser) {
+            await this.browser.close();
+            this.browser = null;
+        }
+    }
+
     private async setLocalStorage(page: Page, storage: Map<string, string>): Promise<void> {
         await page.evaluate((items) => {
             localStorage.clear();
@@ -202,42 +239,40 @@ export class PuppeteerCrawler {
         }, Object.fromEntries(storage));
     }
 
-    protected isMaxDepthReached(depth: number): boolean {
+    private isMaxDepthReached(depth: number): boolean {
         return depth > this.config.maxDepth;
     }
 
-    /**
-     * Проверяет, принадлежит ли URL тому же домену
-     */
-    protected isSameDomain(url: string): boolean {
+    private isSameSecondLevelDomain(url: string): boolean {
         try {
-            const targetOrigin = new URL(this.config.originUrl).origin;
-            const urlOrigin = new URL(url).origin;
-            return urlOrigin === targetOrigin;
+            const targetHost = new URL(this.config.originUrl).hostname; // например: www.wildberries.ru
+            const urlHost = new URL(url).hostname;
+    
+            // достаём домен второго уровня (SLD + TLD)
+            const getSLD = (host: string) => host.split('.').slice(-2).join('.');
+    
+            return getSLD(targetHost) === getSLD(urlHost);
         } catch {
             return false;
         }
     }
 
-    /**
-     * Задержка между запросами
-     */
-    protected async delay(msec: number = this.config.requestDelay): Promise<void> {
-        await new Promise(resolve => setTimeout(resolve, msec));
-    }
-
-    /**
-     * Форматирует URL для использования в качестве имени файла
-     */
-    protected formatUrlForFilename(url: string, depth: number): string {
+    private formatUrlForFilename(url: string, depth: number): string {
         const urlSafe = url.replace(/[^\w]/g, '_').toLowerCase();
         return `depth_${depth}/${urlSafe}`;
     }
 
-    private async takeScreenshot(filename: string = 'screenshot') {
+    private async takeScreenshot(name: string = "screenshot") {
         try {
-            await this.page!.screenshot({ path: `${filename}.png`, fullPage: true });
-            console.log(`Saved screenshot ${filename}.png`);
-        } catch (e) {console.log('error:', e as Error)}
+            await this.page!.screenshot({ path: `${name}.png`, fullPage: true });
+            this.logger.info("Saved screenshot.png");
+        } catch (e) {this.logger.error('error:', e as Error)}
     }
+}
+
+/**
+ * For requests delay
+ */
+async function delay(msec: number): Promise<void> {
+    await new Promise(resolve => setTimeout(resolve, msec));
 }

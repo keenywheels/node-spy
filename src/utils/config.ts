@@ -1,37 +1,28 @@
 import path from 'path';
-import fs from 'fs/promises';
+import fs from 'fs';
+import { LogLevel } from './logger';
 
-/**
- * Интерфейс конфигурации для краулера
- */
 interface CrawlerConfigType {
-    // Файловая система
-    sessionFile: string;
-
-    // URL и навигация
+    logLevel: LogLevel;
+    sessionDir: string;
     originUrl: string;
-    targetUrl: string;
+    siteName: string;
     maxDepth: number;
     requestDelay: number;
-
-    // Настройки браузера
+    waitSPA: number;
+    minInitTime: number;
     browserArgs: string[];
 }
 
-/**
- * Базовая конфигурация
- */
 const DEFAULT_CONFIG: CrawlerConfigType = {
-    // Файловая система
-    sessionFile: path.resolve('./data/session.json'),
-
-    // URL и навигация
-    originUrl: 'https://www.avito.ru',
-    targetUrl: 'https://www.avito.ru',
+    logLevel: "info",
+    sessionDir: '../data',
+    originUrl: 'https://www.wildberries.ru',
+    siteName: 'wildberries',
     maxDepth: 5,
     requestDelay: 1000,
-
-    // Настройки браузера
+    waitSPA: 3000,
+    minInitTime: 5000,
     browserArgs: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -42,36 +33,34 @@ const DEFAULT_CONFIG: CrawlerConfigType = {
     ],
 };
 
-/**
- * Класс конфигурации с возможностью переопределения значений
- */
 export class Config {
     private readonly config: CrawlerConfigType;
     
-    constructor(customConfig: Partial<CrawlerConfigType> = {}) {
+    constructor(configPath: string = '../../config_app.json') {
+        const configFile = fs.readFileSync(path.resolve(configPath), 'utf8');
+        const configData = JSON.parse(configFile);
+        
         this.config = {
             ...DEFAULT_CONFIG,
-            ...customConfig
+            ...configData
         };
         
-        // Создаем необходимые директории
         this.createDirectories();
     }
 
-    /**
-     * Получить текущую конфигурацию
-     */
-    getConfig(): Readonly<CrawlerConfigType> {
-        return Object.freeze({ ...this.config });
+    getConfig(): CrawlerConfigType {
+        return this.config;
     }
 
-    /**
-     * Создание необходимых директорий
-     */
-    private async createDirectories(): Promise<void> {
-        
+    private createDirectories() {
         try {
-            await fs.mkdir(path.dirname(this.config.sessionFile), { recursive: true });
+            fs.mkdir(path.dirname(this.config.sessionDir), { recursive: true }, (err) => {
+                if (err) {
+                  console.error('Error creating directory:', err);
+                } else {
+                  console.log('Directory created successfully!');
+                }
+            });
         } catch (error) {
             console.error('Failed to create directories:', error);
         }

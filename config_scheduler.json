@@ -1,0 +1,13 @@
+{
+    "cronPattern": "0 0 * * *",
+    "sites": [
+        {
+            "site_name": "avito",
+            "url": "https://avito.ru"
+        },
+        {
+            "site_name": "wildberries",
+            "url": "https://wildberries.ru"
+        }
+    ]
+}

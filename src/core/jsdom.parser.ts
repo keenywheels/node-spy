@@ -10,7 +10,7 @@ export class JSDOMParser {
     constructor() {
         this.virtualConsole = new VirtualConsole();
         this.virtualConsole.on('jsdomError', (err: any) => {
-            if (err.type === 'css parsing') {
+            if (err.type === 'css parsing' || err.type === 'css-parsing') {
                 return;
             }
             console.error(err);
