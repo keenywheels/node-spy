@@ -6,20 +6,19 @@ import { KafkaBroker } from './core/kafka.broker';
 import { JSDOMParser } from './core/jsdom.parser';
 
 async function bootstrap() {
-    console.log('Launching headless browser and restoring session...');
-
-    const config = new Config('./config.json');
+    const config = new Config('./config_app.json');
     const cfg = config.getConfig();
     if (process.argv.length > 3) {
         cfg.siteName = process.argv[2];
         cfg.originUrl = process.argv[3];
     }
 
-    const logger = new Logger(/* {logLevel: 'debug'} */);
+    const logger = new Logger({ logLevel: cfg.logLevel });
+    logger.info('Launching headless browser and restoring session...');
 
     const parser = new JSDOMParser();
     
-    const storage = new FileStorage(cfg.sessionFile);
+    const storage = new FileStorage(cfg.sessionDir, cfg.siteName);
     const session = await storage.loadSession();
     
     const kafkaBroker = new KafkaBroker();
@@ -32,6 +31,7 @@ async function bootstrap() {
                 siteName: cfg.siteName,
                 maxDepth: cfg.maxDepth,
                 requestDelay: cfg.requestDelay,
+                waitSPA: cfg.waitSPA,
                 browserArgs: cfg.browserArgs
             },
             parser,
@@ -44,6 +44,7 @@ async function bootstrap() {
 
         await kafkaBroker.producerDisconnect();
 
+        logger.info('All sites successfully visited');
     } catch (error) {
         await kafkaBroker.producerDisconnect();
 

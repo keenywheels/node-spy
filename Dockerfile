@@ -35,6 +35,7 @@ RUN apt-get update && \
         xauth \
         upower \
         dbus-x11 \
+        vim \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
@@ -62,10 +63,7 @@ npm run scheduler\n\
 RUN echo '#!/bin/bash\n\
 echo "DBus session running at $DBUS_SESSION_BUS_ADDRESS"\n\
 cd /app\n\
-# xvfb-run --server-args="-screen 0 1920x1080x24" npm run init $2 >> /var/log/cron.log\n\
-Xvfb :99 -screen 0 1920x1080x24 &\n\
-export DISPLAY=:99\n\
-npm run init $2 >> /var/log/cron.log\n\
+xvfb-run -a --server-args="-screen 0 1920x1080x24" npm run init $1 $2 >> /var/log/cron.log\n\
 npm start $1 $2 >> /var/log/cron.log\n\
 ' > /app/run-app.sh && chmod +x /app/run-app.sh
 

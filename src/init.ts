@@ -5,16 +5,17 @@ import { Logger } from './utils/logger';
 import process from 'process';
 
 async function bootstrap() {
-    console.log('Launching headful browser and saving session...');
-    const config = new Config('./config.json');
+    const config = new Config('./config_app.json');
     const cfg = config.getConfig();
-    if (process.argv.length > 2) {
-        cfg.originUrl = process.argv[2];
+    if (process.argv.length > 3) {
+        cfg.siteName = process.argv[2];
+        cfg.originUrl = process.argv[3];
     }
 
-    const logger = new Logger();
-    
-    const storage = new FileStorage(cfg.sessionFile)
+    const logger = new Logger({ logLevel: cfg.logLevel });
+    logger.info('Launching headful browser and saving session...');
+
+    const storage = new FileStorage(cfg.sessionDir, cfg.siteName);
     
     const sessionStealer = new PuppeteerSessionStealer(
         {
@@ -28,6 +29,7 @@ async function bootstrap() {
 
     const session = await sessionStealer.saveSession();
     await storage.saveSession(session);
+    logger.info('Session successfully saved');
 }
 
 bootstrap().catch(err => {

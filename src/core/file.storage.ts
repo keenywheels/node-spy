@@ -6,7 +6,10 @@ import { Session } from '../entites/session';
  * Represents file storage for session
  */
 export class FileStorage {
-    constructor(private readonly sessionFile: string) {}
+    private readonly sessionFile: string
+    constructor(sessionDir: string, siteName: string) {
+        this.sessionFile = path.resolve(sessionDir, `session_${siteName}.json`);
+    }
 
     /**
      * Saves session to JSON file

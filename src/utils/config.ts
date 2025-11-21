@@ -1,22 +1,27 @@
 import path from 'path';
 import fs from 'fs';
+import { LogLevel } from './logger';
 
 interface CrawlerConfigType {
-    sessionFile: string;
+    logLevel: LogLevel;
+    sessionDir: string;
     originUrl: string;
     siteName: string;
     maxDepth: number;
     requestDelay: number;
+    waitSPA: number;
     minInitTime: number;
     browserArgs: string[];
 }
 
 const DEFAULT_CONFIG: CrawlerConfigType = {
-    sessionFile: '../data/session.json',
+    logLevel: "info",
+    sessionDir: '../data',
     originUrl: 'https://www.wildberries.ru',
     siteName: 'wildberries',
     maxDepth: 5,
     requestDelay: 1000,
+    waitSPA: 3000,
     minInitTime: 5000,
     browserArgs: [
         '--no-sandbox',
@@ -31,7 +36,7 @@ const DEFAULT_CONFIG: CrawlerConfigType = {
 export class Config {
     private readonly config: CrawlerConfigType;
     
-    constructor(configPath: string = '../../config.json') {
+    constructor(configPath: string = '../../config_app.json') {
         const configFile = fs.readFileSync(path.resolve(configPath), 'utf8');
         const configData = JSON.parse(configFile);
         
@@ -49,7 +54,7 @@ export class Config {
 
     private createDirectories() {
         try {
-            fs.mkdir(path.dirname(this.config.sessionFile), { recursive: true }, (err) => {
+            fs.mkdir(path.dirname(this.config.sessionDir), { recursive: true }, (err) => {
                 if (err) {
                   console.error('Error creating directory:', err);
                 } else {

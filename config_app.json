@@ -1,11 +1,12 @@
 {
     "logLevel": "info",
-    "sessionFile": "./data/session.json",
+    "sessionDir": "./data",
     "originUrl": "https://www.avito.ru",
     "siteName": "avito",
     "maxDepth": 5,
     "requestDelay": 1000,
     "minInitTime": 5000,
+    "waitSPA": 3000,
     "browserArgs": [
         "--no-sandbox",
         "--disable-setuid-sandbox",

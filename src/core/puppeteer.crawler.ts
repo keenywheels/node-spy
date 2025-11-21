@@ -3,7 +3,6 @@ import puppeteerExtra from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { Browser, Page } from 'puppeteer';
 import { Session } from '../entites/session';
-import { Webpage } from '../entites/webpage';
 import { Logger } from '../utils/logger';
 import { KafkaBroker } from './kafka.broker';
 import { JSDOMParser } from './jsdom.parser';
@@ -28,11 +27,8 @@ export class PuppeteerSessionStealer {
         this.logger.info("Starting init session stealer");
         this.browser = await puppeteer.launch({
             headless: false,
-            args: this.config.browserArgs,
-            dumpio: true,
-        });
-        this.browser.on("disconnected", () => {
-            this.logger.error("Browser disconnected unexpectedly!");
+            defaultViewport: {width: 1920, height: 1080},
+            args: this.config.browserArgs
         });
 
         this.page = await this.browser.newPage();
@@ -49,7 +45,7 @@ export class PuppeteerSessionStealer {
                 await delay(this.config.minInitTime - timeDiff);
             }
 
-            this.takeScreenshot();
+            /* await this.takeScreenshot(); */
             this.logger.info("Successfully init session stealer");
         } catch (error) {
             await this.closeBrowser();
@@ -62,8 +58,6 @@ export class PuppeteerSessionStealer {
             const cookies = await this.browser!.cookies();
             const localStorage = await this.getLocalStorage(this.page!);
             const sessionStorage = await this.getSessionStorage(this.page!);
-
-            this.takeScreenshot();
 
             await this.closeBrowser();
 
@@ -117,8 +111,8 @@ export class PuppeteerSessionStealer {
     private async takeScreenshot() {
         try {
             await this.page!.screenshot({ path: "screenshot.png", fullPage: true });
-            console.log("Saved screenshot.png");
-        } catch (e) {console.log('error:', e as Error)}
+            this.logger.info("Saved screenshot.png");
+        } catch (e) {this.logger.error('error:', e as Error)}
     }
 }
 
@@ -132,6 +126,7 @@ export class PuppeteerCrawler {
             siteName: string;
             maxDepth: number;
             requestDelay: number;
+            waitSPA: number;
             browserArgs: string[];
         },
         private parser: JSDOMParser,
@@ -142,6 +137,7 @@ export class PuppeteerCrawler {
     async init(session: Session) {
         this.browser = await puppeteerExtra.launch({
             headless: true,
+            defaultViewport: {width: 1920, height: 1080},
             args: this.config.browserArgs
         });
 
@@ -151,10 +147,7 @@ export class PuppeteerCrawler {
             
         try {
             await this.browser.setCookie(...session.cookies);
-            await this.page.goto(this.config.originUrl, { 
-                waitUntil: "domcontentloaded",
-                timeout: 60000 
-            });
+            await this.page.goto(this.config.originUrl, { waitUntil: "domcontentloaded" });
             await this.setLocalStorage(this.page, session.localStorage);
             await this.setSessionStorage(this.page, session.sessionStorage);
             this.logger.info("Successfully init crawler");
@@ -174,31 +167,33 @@ export class PuppeteerCrawler {
         }
     }
 
-    private async visitPage(url: string, depth: number): Promise<Webpage> {
+    private async visitPage(url: string, depth: number): Promise<void> {
         if (this.isMaxDepthReached(depth)) {
-            this.logger.warn(`Max depth ${depth} reached for ${url}`);
-            throw new Error(`Max depth ${depth} reached for ${url}`);
+            this.logger.debug(`Max depth ${depth} reached for ${url}`);
+            return;
         }
 
-        const page = this.page!;
         try {
-            this.logger.info(`→ VISITING (depth ${depth}): ${url}`);
+            this.logger.info(`VISITING (depth ${depth}): ${url}`);
             
-            await page.goto(url, { 
-                waitUntil: 'networkidle2',
-                timeout: 30000 
-            });
+            const startTime = performance.now();
+            await this.page!.goto(url, { waitUntil: 'domcontentloaded' });
+            const endTime = performance.now();
+            const execTime = endTime - startTime;
+            this.logger.debug(`${url} visited in ${execTime}`);
+            if (execTime < this.config.waitSPA) {
+                await delay(this.config.waitSPA - execTime);
+            }
+            // await this.takeScreenshot("after");
 
-            const content = await page.content();
+            const content = await this.page!.content();
             const extractedText = this.parser.parseHTML(content);
             
-            const webpage = new Webpage(url, depth, content, extractedText);
-
             await this.broker.producerSend(this.config.siteName, extractedText.join(' '));
 
             if (!this.isMaxDepthReached(depth + 1)) {
                 const links = this.parser.extractLinks(content)
-                    .filter(link => this.isSameDomain(link));
+                    .filter(link => this.isSameSecondLevelDomain(link));
 
                 this.logger.debug(`Found ${links.length} valid links on ${url}`);
 
@@ -212,7 +207,7 @@ export class PuppeteerCrawler {
                 }
             }
 
-            return webpage;
+            return;
         } catch (error) {
             this.logger.error(`Failed to visit page ${url}`, error as Error);
             throw error;
@@ -248,11 +243,15 @@ export class PuppeteerCrawler {
         return depth > this.config.maxDepth;
     }
 
-    private isSameDomain(url: string): boolean {
+    private isSameSecondLevelDomain(url: string): boolean {
         try {
-            const targetOrigin = new URL(this.config.originUrl).origin;
-            const urlOrigin = new URL(url).origin;
-            return urlOrigin === targetOrigin;
+            const targetHost = new URL(this.config.originUrl).hostname; // например: www.wildberries.ru
+            const urlHost = new URL(url).hostname;
+    
+            // достаём домен второго уровня (SLD + TLD)
+            const getSLD = (host: string) => host.split('.').slice(-2).join('.');
+    
+            return getSLD(targetHost) === getSLD(urlHost);
         } catch {
             return false;
         }
@@ -261,6 +260,13 @@ export class PuppeteerCrawler {
     private formatUrlForFilename(url: string, depth: number): string {
         const urlSafe = url.replace(/[^\w]/g, '_').toLowerCase();
         return `depth_${depth}/${urlSafe}`;
+    }
+
+    private async takeScreenshot(name: string = "screenshot") {
+        try {
+            await this.page!.screenshot({ path: `${name}.png`, fullPage: true });
+            this.logger.info("Saved screenshot.png");
+        } catch (e) {this.logger.error('error:', e as Error)}
     }
 }
 
