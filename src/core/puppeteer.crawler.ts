@@ -6,6 +6,7 @@ import { Session } from '../entites/session';
 import { Logger } from '../utils/logger';
 import { KafkaBroker } from './kafka.broker';
 import { JSDOMParser } from './jsdom.parser';
+import { Cookie } from 'puppeteer';
 
 // Initialize the stealth plugin
 puppeteerExtra.use(StealthPlugin());
@@ -54,23 +55,39 @@ export class PuppeteerSessionStealer {
     }
 
     async saveSession(): Promise<Session> {
+        let cookies: Cookie[];
         try {
-            const cookies = await this.browser!.cookies();
-            const localStorage = await this.getLocalStorage(this.page!);
-            const sessionStorage = await this.getSessionStorage(this.page!);
-
-            await this.closeBrowser();
-
-            return new Session(
-                new Date(),
-                cookies,
-                localStorage,
-                sessionStorage
-            );
+            cookies = await this.browser!.cookies();
         } catch (error) {
             await this.closeBrowser();
-            throw new Error(`Failed to save session: ${error}`);
+            throw new Error(`Failed to save session (browser cookies): ${error}`);
         }
+
+        let localStorage = new Map<string, string>();
+        try {
+            localStorage = await this.getLocalStorage(this.page!);
+        } catch (error) {
+            await this.closeBrowser();
+            throw new Error(`Failed to save session (local storage): ${error}`);
+        }
+
+        let sessionStorage = new Map<string, string>();
+        try {
+            sessionStorage = await this.getSessionStorage(this.page!);
+        } catch (error) {
+            await this.closeBrowser();
+            throw new Error(`Failed to save session (session storage): ${error}`);
+        }
+
+        await this.closeBrowser();
+
+        return new Session(
+            new Date(),
+            cookies,
+            localStorage,
+            sessionStorage
+        );
+        
     }
 
     private async closeBrowser(): Promise<void> {

@@ -42,7 +42,7 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /app
-COPY package*.json .
+COPY package*.json ./
 RUN npm install
 COPY . .
 
