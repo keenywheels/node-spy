@@ -21,6 +21,7 @@ export class KafkaBroker {
         const data: Object = {
             "site_name": siteName,
             "msg": msg,
+            "category": "marketplace",
             "date": this.formatDate(date)
         }
         await this.producer.send({
